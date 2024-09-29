@@ -17,10 +17,10 @@ export default class TextSnippets extends Plugin {
 	async onload() {
 		console.log("Loading snippets plugin");
 		await this.loadSettings();
-		
+
 		this.addSettingTab(new TextSnippetsSettingsTab(this.app, this));
 		//expected warning
-		var isLegacy = this.app.vault.config.legacyEditor;
+		var isLegacy = (this.app as any).vault.config?.legacyEditor;
 		if (!isLegacy != this.settings.isWYSIWYG) {
 			this.settings.isWYSIWYG = !isLegacy;
 			await this.saveSettings();
@@ -36,12 +36,18 @@ export default class TextSnippets extends Plugin {
 			}],
 		});
 
-		this.cmEditors = [];
-		this.registerCodeMirror((cm) => {
-			this.cmEditors.push(cm);
-			// the callback has to be called through another function in order for 'this' to work
-			cm.on('keydown', (cm, event) => this.handleKeyDown(cm, event));
-		});
+		if(isLegacy){
+		  this.cmEditors = [];
+			this.registerCodeMirror((cm) => {
+					this.cmEditors.push(cm);
+					// the callback has to be called through another function in order for 'this' to work
+					cm.on('keydown', (cm, event) => this.handleKeyDown(event));
+				});
+		}else {
+		  this.app.workspace.onLayoutReady(() => {
+			this.registerDomEvent(document, 'keydown', (event) => this.handleKeyDown(event));
+			});
+		}
 	}
 
 	async onunload() {
@@ -51,7 +57,7 @@ export default class TextSnippets extends Plugin {
 		this.registerCodeMirror((cm) => {
 			this.cmEditors.push(cm);
 			// the callback has to be called through another function in order for 'this' to work
-			cm.off('keydown', (cm, event) => this.handleKeyDown(cm, event));
+			cm.off('keydown', (cm, event) => this.handleKeyDown(event));
 		});
 	}
 
@@ -108,7 +114,7 @@ export default class TextSnippets extends Plugin {
 		var word = this.SnippetsWordAt(editor, cursor);
 		var wordStart = word.from.ch;
 		var wordEnd = word.to.ch;
-		
+
 		return {
 			start: {
 				line: line,
@@ -155,7 +161,7 @@ export default class TextSnippets extends Plugin {
 		if (newStr.indexOf(stopSymbol) == -1) {
 			var rawEnd = newStr.indexOf(endSymbol);
 			if (rawEnd == -1)	rawEnd = newStr.length;
-			
+
 			var lastNl = newStr.substring(0, rawEnd).lastIndexOf(nlSymb);
 			if (lastNl != -1)	var endPosIndex = rawEnd - lastNl - nlSymb.length - cursor.ch;
 			else 				var endPosIndex = rawEnd;
@@ -202,7 +208,7 @@ export default class TextSnippets extends Plugin {
 
 		//proceed Tab and Spacebar
 		var endCursor = editor.getCursor('to');
-		if (newStr == "" || 
+		if (newStr == "" ||
 			(key == 'Space' && (cursorOrig.ch != endCursor.ch || cursorOrig.line != endCursor.line)) )  {
 			if (wasSelection == false) {
 				editor.getDoc().setSelection(cursorOrig, cursorOrig);
@@ -253,7 +259,10 @@ export default class TextSnippets extends Plugin {
 		});
 	}
 
-	handleKeyDown (cm: CodeMirror.Editor, event: KeyboardEvent): void {
+	handleKeyDown (event: KeyboardEvent): void {
+		if (this.app.workspace.getActiveViewOfType(MarkdownView) == null) {
+			return;
+		}
 		if ((event.key == 'Tab' && this.settings.useTab) || (event.code == 'Space' && this.settings.useSpace)) {
 			this.SnippetOnTrigger(event.code, true);
 		}
@@ -275,7 +284,7 @@ export default class TextSnippets extends Plugin {
 					}
 				}
 			}
-			
+
 			if (cursorSt.ch >=0 && cursorSt.line >= 0) {		//paste text from clipboard
 				var cursorOrig = cm.getCursor();
 				navigator.clipboard.readText().then(
